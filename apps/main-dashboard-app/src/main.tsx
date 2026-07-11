@@ -1,9 +1,8 @@
+import React from "react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-
-function App() {
-  return <h1>StapelFeed — Dashboard</h1>;
-}
+import "./index.css";
+import App from "./App";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
