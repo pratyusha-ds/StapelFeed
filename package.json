@@ -1,0 +1,17 @@
+{
+  "name": "stapelfeed",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.0",
+    "turbo": "^2.0.0"
+  },
+  "packageManager": "npm@10.9.7"
+}
