@@ -1,17 +1,48 @@
-import React from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Rss } from "lucide-react";
 import DashboardHeader from "./components/DashboardHeader";
 import LogCounterCard from "./components/LogCounterCard";
 
-const SERVICES = ["auth-service", "payment-gateway", "api-router", "user-sync", "notification-queue"];
+const SERVICES = [
+  "auth-service",
+  "payment-gateway",
+  "api-router",
+  "user-sync",
+  "notification-queue",
+];
 const LEVELS = ["INFO", "WARN", "ERROR"] as const;
 const MESSAGES: Record<string, string[]> = {
-  "auth-service": ["Token refreshed", "Invalid session", "User authenticated", "Rate limit hit"],
-  "payment-gateway": ["Charge succeeded", "Payment declined", "Refund processed", "Webhook received"],
-  "api-router": ["Request proxied", "Response 502 upstream", "Cache miss", "Route matched"],
-  "user-sync": ["Profile updated", "Sync completed", "Conflict detected", "Batch processed"],
-  "notification-queue": ["Email queued", "Push sent", "Queue drained", "Delivery failed"],
+  "auth-service": [
+    "Token refreshed",
+    "Invalid session",
+    "User authenticated",
+    "Rate limit hit",
+  ],
+  "payment-gateway": [
+    "Charge succeeded",
+    "Payment declined",
+    "Refund processed",
+    "Webhook received",
+  ],
+  "api-router": [
+    "Request proxied",
+    "Response 502 upstream",
+    "Cache miss",
+    "Route matched",
+  ],
+  "user-sync": [
+    "Profile updated",
+    "Sync completed",
+    "Conflict detected",
+    "Batch processed",
+  ],
+  "notification-queue": [
+    "Email queued",
+    "Push sent",
+    "Queue drained",
+    "Delivery failed",
+  ],
 };
 
 function randomItem<T>(arr: readonly T[]): T {
@@ -53,13 +84,17 @@ function FeedPlaceholderCard() {
 function ContentColumn() {
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-slate-100">StapelFeed — Developer Stream</h2>
+      <h2 className="text-lg font-semibold text-slate-100">
+        StapelFeed — Developer Stream
+      </h2>
       <FeedPlaceholderCard />
     </div>
   );
 }
 
 export default function App() {
+  const queryClient = useQueryClient();
+
   const { data, isLoading } = useQuery({
     queryKey: ["systemLogs"],
     queryFn: () =>
@@ -69,6 +104,23 @@ export default function App() {
       }),
     refetchInterval: 3000,
   });
+
+  useEffect(() => {
+    const eventSource = new EventSource("http://localhost:3001/logs/stream");
+
+    eventSource.onmessage = (event) => {
+      const newLog = JSON.parse(event.data);
+      queryClient.setQueryData(["systemLogs"], (oldData: any) =>
+        oldData
+          ? { ...oldData, logs: [newLog, ...(oldData.logs ?? [])] }
+          : { logs: [newLog] },
+      );
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [queryClient]);
 
   return (
     <div className="min-h-screen bg-slate-900">
