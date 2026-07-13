@@ -5,7 +5,9 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite --port 3000",
-    "lint": "eslint src/",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src/ --fix",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {

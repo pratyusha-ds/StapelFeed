@@ -1,0 +1,69 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, dev]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract pull request diff
+        id: diff
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          DIFF=$(git diff "$BASE"..."$HEAD" -- . 2>/dev/null || git diff "$BASE".."$HEAD" -- .)
+          echo "diff<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$DIFF" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Review code with Gemini
+        id: gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PATCH: ${{ steps.diff.outputs.diff }}
+        run: |
+          PROMPT='You are an encouraging but sharp peer developer reviewing a Turborepo monorepo. Skip excessive praise. Pinpoint obvious logic bugs, unhandled async errors, leftover debugging code (e.g. console.log), or strict TypeScript rule breakages.
+
+          ```diff
+          '"$PATCH"'
+          ```'
+
+          PAYLOAD=$(jq -n --arg prompt "$PROMPT" '{
+            contents: [{ parts: [{ text: $prompt }] }]
+          }')
+
+          RESPONSE=$(curl -s \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+
+          REVIEW=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // "No review generated."')
+
+          echo "review<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$REVIEW" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Post review comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const review = `## 🤖 AI Code Review\n\n${process.env.REVIEW}`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: review
+            });
+        env:
+          REVIEW: ${{ steps.gemini.outputs.review }}
