@@ -4,7 +4,9 @@
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",
-    "lint": "eslint src/",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src/ --fix",
+    "test": "vitest run --config vitest.config.ts",
     "start:prod": "node dist/main"
   },
   "dependencies": {
@@ -18,9 +20,12 @@
   "devDependencies": {
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
+    "@nestjs/testing": "^11.1.28",
     "@types/node": "^22.20.1",
     "eslint": "^9.0.0",
     "tsx": "^4.23.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "unplugin-swc": "^1.5.9",
+    "vitest": "^4.1.10"
   }
 }

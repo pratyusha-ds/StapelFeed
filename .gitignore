@@ -26,3 +26,5 @@ out/
 
 # Turborepo cache
 .turbo/
+
+.vite
