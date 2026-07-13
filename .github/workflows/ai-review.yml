@@ -6,6 +6,8 @@ on:
     branches: [main, dev]
 
 permissions:
+  contents: read
+  issues: write
   pull-requests: write
 
 jobs:
@@ -21,29 +23,56 @@ jobs:
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-          git diff "$BASE"..."$HEAD" -- . > raw_diff.txt
+          git diff "$BASE"..."$HEAD" -- . > raw_diff.txt || true
 
       - name: Review code with Gemini
         id: gemini
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-2.0-flash
         run: |
-          jq -n \
-            --rawfile diff raw_diff.txt \
-            --arg instructions "You are an encouraging but sharp peer developer reviewing a Turborepo monorepo. Skip excessive praise. Pinpoint obvious logic bugs, unhandled async errors, leftover debugging code (e.g. console.log), or strict TypeScript rule breakages." \
-            '{ contents: [{ parts: [{ text: ($instructions + "\n\n```diff\n" + $diff + "\n```") }] }] }' > payload.json
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "Gemini API key is not configured." > review_output.txt
+          else
+            jq -n \
+              --rawfile diff raw_diff.txt \
+              --arg instructions "You are an encouraging but sharp peer developer reviewing a Turborepo monorepo. Skip excessive praise. Pinpoint obvious logic bugs, unhandled async errors, leftover debugging code (e.g. console.log), or strict TypeScript rule breakages." \
+              --arg model "$GEMINI_MODEL" \
+              '{
+                contents: [{
+                  role: "user",
+                  parts: [{ text: ($instructions + "\n\n```diff\n" + $diff + "\n```") }]
+                }],
+                generationConfig: {
+                  temperature: 0.2,
+                  maxOutputTokens: 1200
+                }
+              }' > payload.json
 
-          RESPONSE=$(curl -s -X POST \
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @payload.json)
+            HTTP_STATUS=$(curl -sS -o response.json -w "%{http_code}" \
+              -X POST \
+              "https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent?key=$GEMINI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d @payload.json)
 
-          echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text' > review_output.txt 2>/dev/null || true
+            if [ "$HTTP_STATUS" -ne 200 ]; then
+              echo "Gemini API request failed with status $HTTP_STATUS." > review_output.txt
+              echo "Response body:" >> review_output.txt
+              cat response.json >> review_output.txt
+            else
+              REVIEW_TEXT=$(jq -r '.candidates[0].content.parts[0].text // empty' response.json)
 
-          if [ ! -s review_output.txt ] || [ "$(cat review_output.txt)" = "null" ]; then
-            echo "Gemini API Error! Raw API Response was:"
-            echo "$RESPONSE"
-            echo "Could not generate review. Please check the API key permissions or payload structures." > review_output.txt
+              if [ -z "$REVIEW_TEXT" ] || [ "$REVIEW_TEXT" = "null" ]; then
+                ERROR_TEXT=$(jq -r '.error.message // empty' response.json)
+                if [ -n "$ERROR_TEXT" ]; then
+                  echo "Gemini API error: $ERROR_TEXT" > review_output.txt
+                else
+                  echo "Gemini API returned an empty response. Please verify the API key permissions and model availability." > review_output.txt
+                fi
+              else
+                printf '%s\n' "$REVIEW_TEXT" > review_output.txt
+              fi
+            fi
           fi
 
           echo "review<<EOF" >> "$GITHUB_OUTPUT"
