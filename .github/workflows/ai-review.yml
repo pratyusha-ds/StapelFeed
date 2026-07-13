@@ -21,36 +21,31 @@ jobs:
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-
-          # 1. Write the system instruction headers to our prompt file
-          echo "You are an encouraging but sharp peer developer reviewing a Turborepo monorepo. Skip excessive praise. Pinpoint obvious logic bugs, unhandled async errors, leftover debugging code (e.g. console.log), or strict TypeScript rule breakages." > ai_prompt.txt
-          echo "" >> ai_prompt.txt
-          echo '```diff' >> ai_prompt.txt
-
-          # 2. Append the actual diff content safely to the file
-          git diff "$BASE"..."$HEAD" -- . >> ai_prompt.txt
-
-          # 3. Close the markdown formatting block
-          echo '```' >> ai_prompt.txt
+          git diff "$BASE"..."$HEAD" -- . > raw_diff.txt
 
       - name: Review code with Gemini
         id: gemini
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          # 4. Use jq to read the prompt text file directly as a JSON payload (bypasses terminal memory limits)
-          jq -n --rawfile text ai_prompt.txt '{ contents: [{ parts: [{ text: $text }] }] }' > payload.json
+          jq -n \
+            --rawfile diff raw_diff.txt \
+            --arg instructions "You are an encouraging but sharp peer developer reviewing a Turborepo monorepo. Skip excessive praise. Pinpoint obvious logic bugs, unhandled async errors, leftover debugging code (e.g. console.log), or strict TypeScript rule breakages." \
+            '{ contents: [{ parts: [{ text: ($instructions + "\n\n```diff\n" + $diff + "\n```") }] }] }' > payload.json
 
-          # 5. POST the payload file directly to the API
-          RESPONSE=$(curl -s \
+          RESPONSE=$(curl -s -X POST \
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY" \
             -H "Content-Type: application/json" \
             -d @payload.json)
 
-          # 6. Extract the review content safely to an intermediate file
-          echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // "No review generated."' > review_output.txt
+          echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text' > review_output.txt 2>/dev/null || true
 
-          # 7. Pipe the text file safely into GITHUB_OUTPUT using multiline syntax
+          if [ ! -s review_output.txt ] || [ "$(cat review_output.txt)" = "null" ]; then
+            echo "Gemini API Error! Raw API Response was:"
+            echo "$RESPONSE"
+            echo "Could not generate review. Please check the API key permissions or payload structures." > review_output.txt
+          fi
+
           echo "review<<EOF" >> "$GITHUB_OUTPUT"
           cat review_output.txt >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
