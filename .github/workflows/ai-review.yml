@@ -18,26 +18,23 @@ jobs:
           fetch-depth: 0
 
       - name: Extract pull request diff
-        id: diff
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-          DIFF=$(git diff "$BASE"..."$HEAD" -- . 2>/dev/null || git diff "$BASE".."$HEAD" -- .)
-          echo "diff<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$DIFF" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+          git diff "$BASE"..."$HEAD" -- . > pr_diff.txt
 
       - name: Review code with Gemini
         id: gemini
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PATCH: ${{ steps.diff.outputs.diff }}
         run: |
-          PROMPT='You are an encouraging but sharp peer developer reviewing a Turborepo monorepo. Skip excessive praise. Pinpoint obvious logic bugs, unhandled async errors, leftover debugging code (e.g. console.log), or strict TypeScript rule breakages.
+          DIFF_CONTENT=$(cat pr_diff.txt)
 
-          ```diff
-          '"$PATCH"'
-          ```'
+          PROMPT="You are an encouraging but sharp peer developer reviewing a Turborepo monorepo. Skip excessive praise. Pinpoint obvious logic bugs, unhandled async errors, leftover debugging code (e.g. console.log), or strict TypeScript rule breakages.
+
+          \`\`\`diff
+          $DIFF_CONTENT
+          \`\`\`"
 
           PAYLOAD=$(jq -n --arg prompt "$PROMPT" '{
             contents: [{ parts: [{ text: $prompt }] }]
