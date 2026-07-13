@@ -1,0 +1,71 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, dev]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract pull request diff
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+
+          git diff "$BASE"..."$HEAD" -- \
+            '*.ts' '*.tsx' '*.js' '*.jsx' \
+            ':(exclude)*.d.ts' \
+            ':(exclude)*.test.ts' \
+            ':(exclude)dist/*' \
+            ':(exclude)node_modules/*' > raw_diff.txt
+
+          if [ ! -s raw_diff.txt ]; then
+            echo "No core logic files were changed in this PR." > raw_diff.txt
+          fi
+
+      - name: Review code with Gemini
+        id: gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          jq -n \
+            --rawfile diff raw_diff.txt \
+            --arg instructions "You are an encouraging but sharp peer developer reviewing a Turborepo monorepo. Skip excessive praise. Pinpoint obvious logic bugs, unhandled async errors, leftover debugging code (e.g. console.log), or strict TypeScript rule breakages." \
+            '{ contents: [{ parts: [{ text: ($instructions + "\n\n```diff\n" + $diff + "\n```") }] }] }' > payload.json
+
+          RESPONSE=$(curl -s -X POST \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @payload.json)
+
+          echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text' > review_output.txt 2>/dev/null || true
+
+          if [ ! -s review_output.txt ] || [ "$(cat review_output.txt)" = "null" ]; then
+            echo "Gemini API Error. The request either failed or exceeded token limits." > review_output.txt
+          fi
+
+      - name: Post review comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const rawReview = fs.readFileSync('review_output.txt', 'utf8');
+
+            const review = `## 🤖 AI Code Review\n\n${rawReview}`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: review
+            });

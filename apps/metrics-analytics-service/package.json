@@ -4,7 +4,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "dev": "tsup src/index.ts --format cjs,esm --watch --onSuccess \"node dist/index.js\"",
-    "lint": "eslint src/"
+    "lint": "eslint src/ --fix"
   },
   "dependencies": {
     "express": "^4.21.0"

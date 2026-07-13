@@ -5,7 +5,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite --port 3001",
-    "lint": "eslint src/",
+    "lint": "eslint src/ --fix",
     "preview": "vite preview"
   },
   "dependencies": {
