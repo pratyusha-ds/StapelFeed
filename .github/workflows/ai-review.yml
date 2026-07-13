@@ -21,38 +21,44 @@ jobs:
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-          git diff "$BASE"..."$HEAD" -- . > pr_diff.txt
+
+          # 1. Write the system instruction headers to our prompt file
+          echo "You are an encouraging but sharp peer developer reviewing a Turborepo monorepo. Skip excessive praise. Pinpoint obvious logic bugs, unhandled async errors, leftover debugging code (e.g. console.log), or strict TypeScript rule breakages." > ai_prompt.txt
+          echo "" >> ai_prompt.txt
+          echo '```diff' >> ai_prompt.txt
+
+          # 2. Append the actual diff content safely to the file
+          git diff "$BASE"..."$HEAD" -- . >> ai_prompt.txt
+
+          # 3. Close the markdown formatting block
+          echo '```' >> ai_prompt.txt
 
       - name: Review code with Gemini
         id: gemini
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          DIFF_CONTENT=$(cat pr_diff.txt)
+          # 4. Use jq to read the prompt text file directly as a JSON payload (bypasses terminal memory limits)
+          jq -n --rawfile text ai_prompt.txt '{ contents: [{ parts: [{ text: $text }] }] }' > payload.json
 
-          PROMPT="You are an encouraging but sharp peer developer reviewing a Turborepo monorepo. Skip excessive praise. Pinpoint obvious logic bugs, unhandled async errors, leftover debugging code (e.g. console.log), or strict TypeScript rule breakages.
-
-          \`\`\`diff
-          $DIFF_CONTENT
-          \`\`\`"
-
-          PAYLOAD=$(jq -n --arg prompt "$PROMPT" '{
-            contents: [{ parts: [{ text: $prompt }] }]
-          }')
-
+          # 5. POST the payload file directly to the API
           RESPONSE=$(curl -s \
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "$PAYLOAD")
+            -d @payload.json)
 
-          REVIEW=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // "No review generated."')
+          # 6. Extract the review content safely to an intermediate file
+          echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // "No review generated."' > review_output.txt
 
+          # 7. Pipe the text file safely into GITHUB_OUTPUT using multiline syntax
           echo "review<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$REVIEW" >> "$GITHUB_OUTPUT"
+          cat review_output.txt >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Post review comment on PR
         uses: actions/github-script@v7
+        env:
+          REVIEW: ${{ steps.gemini.outputs.review }}
         with:
           script: |
             const review = `## 🤖 AI Code Review\n\n${process.env.REVIEW}`;
@@ -62,5 +68,3 @@ jobs:
               repo: context.repo.repo,
               body: review
             });
-        env:
-          REVIEW: ${{ steps.gemini.outputs.review }}
