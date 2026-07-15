@@ -1,0 +1,16 @@
+previews:
+  generation: automatic
+  expireAfterDays: 3
+
+services:
+  - name: log-ingestion-service
+    type: web
+    runtime: node
+    plan: free
+    buildCommand: "npm run build --filter=log-ingestion-service"
+    startCommand: "node apps/log-ingestion-service/dist/main.js"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
