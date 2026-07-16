@@ -3,7 +3,7 @@ services:
     type: web
     runtime: node
     plan: free
-    buildCommand: "npm include=dev ci && npm run build --filter=log-ingestion-service"
+    buildCommand: "NPM_CONFIG_PRODUCTION=false npm ci && npm run build --filter=log-ingestion-service"
     startCommand: "node apps/log-ingestion-service/dist/main.js"
     envVars:
       - key: NODE_ENV
