@@ -1,5 +1,8 @@
 import { NestFactory } from "@nestjs/core";
-import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify";
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from "@nestjs/platform-fastify";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
@@ -9,7 +12,11 @@ async function bootstrap() {
   );
 
   app.enableCors({ origin: "*" });
-  await app.listen(3001, "0.0.0.0");
+
+  const port = process.env.PORT || 3001;
+
+  await app.listen(port, "0.0.0.0");
+  console.log(`Application is running on port: ${port}`);
 }
 
 bootstrap();
