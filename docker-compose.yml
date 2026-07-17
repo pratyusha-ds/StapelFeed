@@ -14,5 +14,26 @@ services:
       - stapelfeed_pgdata_prod:/var/lib/postgresql/data
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: stapelfeed_prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: stapelfeed_grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - stapelfeed_grafana_data:/var/lib/grafana
+    restart: unless-stopped
+
 volumes:
   stapelfeed_pgdata_prod:
+  stapelfeed_grafana_data:
